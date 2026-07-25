@@ -8,7 +8,7 @@ class AgenteQLearning:
     def __init__(self, alpha=0.1, gamma=0.9, epsilon=0.15):
         self.alpha = alpha     # Taxa de aprendizado
         self.gamma = gamma     # Importância de recompensas futuras
-        self.epsilon = epsilon # Taxa de exploração (tentar coisas novas)
+        self.epsilon = epsilon # Taxa de exploração
         self.q_table = {}
         self.carregar_q_table()
         
@@ -40,11 +40,9 @@ class AgenteQLearning:
         if estado_str not in self.q_table:
             self.q_table[estado_str] = {str(a): 0.0 for a in acoes_possiveis}
 
-        # Exploração (chuta uma jogada para testar resultado)
         if random.random() < self.epsilon:
             acao = random.choice(acoes_possiveis)
         else:
-            # Explotação (escolhe a jogada de maior valor aprendido)
             q_valores = [self.obter_q(estado_str, a) for a in acoes_possiveis]
             max_q = max(q_valores)
             melhores = [a for a, q in zip(acoes_possiveis, q_valores) if q == max_q]
@@ -69,11 +67,10 @@ class AgenteQLearning:
             else:
                 max_q_futuro = 0.0
 
-        # Fórmula de atualização do Q-Learning
         novo_q = q_antigo + self.alpha * (recompensa + self.gamma * max_q_futuro - q_antigo)
 
         if self.ultimo_estado not in self.q_table:
             self.q_table[self.ultimo_estado] = {}
 
         self.q_table[self.ultimo_estado][self.ultima_acao] = novo_q
-        self.salvar_q_table()
+        # REMOVIDO: self.salvar_q_table() -> Salvar no disco a cada jogada causava congelamentos!

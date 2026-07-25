@@ -100,4 +100,4 @@ def treinar_agente(total_partidas=50000):
 
 if __name__ == "__main__":
     # Altere a quantidade de simulações se quiser (ex: 10000, 50000, 100000)
-    treinar_agente(total_partidas=2000)
+    treinar_agente(total_partidas=1000)

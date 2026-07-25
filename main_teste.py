@@ -1,6 +1,7 @@
 import pygame
 import random
 import sys
+import math
 
 from agente import AgenteQLearning
 from truco_regras import (
@@ -18,13 +19,15 @@ LARGURA = 1000
 ALTURA = 680
 
 tela = pygame.display.set_mode((LARGURA, ALTURA))
-pygame.display.set_caption("Mini Truco - Com IA que Aprende (Q-Learning)")
+pygame.display.set_caption("Mini Truco - IA & Animações")
 
+# Fontes
 fonte_canto = pygame.font.SysFont("Arial", 11, bold=True)
 fonte_pequena = pygame.font.SysFont("Arial", 13, bold=True)
 fonte_media = pygame.font.SysFont("Arial", 19)
 fonte_grande = pygame.font.SysFont("Arial", 26, bold=True)
 fonte_destaque = pygame.font.SysFont("Arial", 36, bold=True)
+fonte_truco_anim = pygame.font.SysFont("Impact", 42, bold=True)
 
 clock = pygame.time.Clock()
 
@@ -32,13 +35,93 @@ TEMPO_PENSANDO_CPU = 800
 TEMPO_RESULTADO = 1800
 
 FRASES_TRUCO = {
-    3: ["TRUCO, MÁQUINA!", "TRUCO NA MESA!", "LÁ VAI O TRUCO!"],
-    6: ["SEIS NA CABEÇA!", "DESAFIO ACEITO: SEIS!", "PAGA SEIS PRA VER!"],
-    9: ["NOVE NA FROUXA!", "É NOVE! AQUI NÃO TEM MEDO!"],
-    12: ["DOZE! VALE O JOGO TODO!", "É DOZE OU FOGE!"]
+    3: ["TRUCO!", "TRUCO NA MESA!", "LÁ VAI O TRUCO!"],
+    6: ["SEIS NA CABEÇA!", "DESAFIO ACEITO: SEIS!"],
+    9: ["NOVE NA FROUXA!", "É NOVE!"],
+    12: ["DOZE! VALE TUDO!", "É DOZE OU FOGE!"]
 }
 
+# ==========================
+# CARREGAMENTO DE ASSETS (IMAGENS)
+# ==========================
+def carregar_imagem(caminho, largura, altura):
+    try:
+        img = pygame.image.load(caminho).convert_alpha()
+        return pygame.transform.smoothscale(img, (largura, altura))
+    except Exception:
+        return None
+
+img_avatar_j = carregar_imagem("assets/avatar_jogador.png", 60, 60)
+img_avatar_c = carregar_imagem("assets/avatar_cpu.png", 60, 60)
+img_verso_carta = carregar_imagem("assets/verso_carta.png", 75, 110)
+
 ia_agente = AgenteQLearning()
+
+# ==========================
+# SISTEMA DE ANIMAÇÃO DO TRUCO
+# ==========================
+class AnimacaoTruco:
+    def __init__(self):
+        self.ativo = False
+        self.texto = ""
+        self.x = 830
+        self.y_inicial = -100
+        self.y_alvo = 300
+        self.y_atual = self.y_inicial
+        self.escala = 0.1
+        self.tempo_inicio = 0
+
+    def disparar(self, texto):
+        self.ativo = True
+        self.texto = texto
+        self.y_atual = self.y_inicial
+        self.escala = 0.1
+        self.tempo_inicio = pygame.time.get_ticks()
+
+    def atualizar_e_desenhar(self, surface, agora):
+        if not self.ativo:
+            return
+
+        decorrido = agora - self.tempo_inicio
+        if decorrido > 1600:
+            self.ativo = False
+            return
+
+        progresso = min(1.0, decorrido / 400.0)
+        self.y_atual = self.y_inicial + (self.y_alvo - self.y_inicial) * math.sin(progresso * math.pi / 2)
+        self.escala = min(1.2, progresso * 1.2)
+
+        surf_texto = fonte_truco_anim.render(self.texto, True, (255, 215, 0))
+        surf_sombra = fonte_truco_anim.render(self.texto, True, (200, 30, 30))
+
+        w = int(surf_texto.get_width() * self.escala)
+        h = int(surf_texto.get_height() * self.escala)
+
+        if w > 0 and h > 0:
+            txt_redim = pygame.transform.smoothscale(surf_texto, (w, h))
+            sombra_redim = pygame.transform.smoothscale(surf_sombra, (w, h))
+
+            rect_dest = txt_redim.get_rect(center=(self.x, int(self.y_atual)))
+            surface.blit(sombra_redim, (rect_dest.x + 3, rect_dest.y + 3))
+            surface.blit(txt_redim, rect_dest)
+
+anim_truco = AnimacaoTruco()
+
+# ==========================
+# FUNÇÕES DE RENDERIZAÇÃO
+# ==========================
+def desenhar_avatar(surface, x, y, nome, img_avatar, cor_borda):
+    if img_avatar:
+        surface.blit(img_avatar, (x, y))
+        pygame.draw.rect(surface, cor_borda, (x, y, 60, 60), 2, border_radius=8)
+    else:
+        pygame.draw.rect(surface, (40, 50, 70), (x, y, 60, 60), border_radius=8)
+        pygame.draw.rect(surface, cor_borda, (x, y, 60, 60), 2, border_radius=8)
+        txt_letra = fonte_grande.render(nome[0], True, (255, 255, 255))
+        surface.blit(txt_letra, (x + (60 - txt_letra.get_width()) // 2, y + 10))
+
+    lbl_nome = fonte_pequena.render(nome, True, (220, 220, 220))
+    surface.blit(lbl_nome, (x + (60 - lbl_nome.get_width()) // 2, y + 63))
 
 def desenhar_carta(surface, x, y, largura, altura, carta_info, tombo_str, selecionada=False, eh_tombo=False):
     if isinstance(carta_info, dict):
@@ -49,10 +132,13 @@ def desenhar_carta(surface, x, y, largura, altura, carta_info, tombo_str, seleci
         coberta = False
 
     if coberta:
-        pygame.draw.rect(surface, (50, 70, 120), (x, y, largura, altura), border_radius=6)
-        pygame.draw.rect(surface, (255, 255, 255), (x, y, largura, altura), 2, border_radius=6)
-        txt = fonte_pequena.render("COBERTA", True, (255, 255, 255))
-        surface.blit(txt, (x + (largura - txt.get_width()) // 2, y + (altura - txt.get_height()) // 2))
+        if img_verso_carta:
+            surface.blit(img_verso_carta, (x, y))
+        else:
+            pygame.draw.rect(surface, (50, 70, 120), (x, y, largura, altura), border_radius=6)
+            pygame.draw.rect(surface, (255, 255, 255), (x, y, largura, altura), 2, border_radius=6)
+            txt = fonte_pequena.render("COBERTA", True, (255, 255, 255))
+            surface.blit(txt, (x + (largura - txt.get_width()) // 2, y + (altura - txt.get_height()) // 2))
         return
 
     pygame.draw.rect(surface, (255, 255, 255), (x, y, largura, altura), border_radius=6)
@@ -76,6 +162,18 @@ def desenhar_carta(surface, x, y, largura, altura, carta_info, tombo_str, seleci
     surface.blit(txt_mini, (x + largura - txt_mini.get_width() - pad, y + pad))
     surface.blit(txt_mini, (x + pad, y + altura - txt_mini.get_height() - pad))
     surface.blit(txt_mini, (x + largura - txt_mini.get_width() - pad, y + altura - txt_mini.get_height() - pad))
+
+def desenhar_monte_baralho(surface, x, y):
+    for i in range(4):
+        offset = i * 2
+        if img_verso_carta:
+            surface.blit(img_verso_carta, (x - offset, y - offset))
+        else:
+            pygame.draw.rect(surface, (40, 60, 110), (x - offset, y - offset, 75, 110), border_radius=6)
+            pygame.draw.rect(surface, (200, 200, 200), (x - offset, y - offset, 75, 110), 1, border_radius=6)
+
+    lbl = fonte_pequena.render("DECK", True, (200, 220, 200))
+    surface.blit(lbl, (x - 6 + (75 - lbl.get_width()) // 2, y - 20))
 
 # ==========================
 # INICIALIZAÇÃO DO ESTADO
@@ -139,13 +237,18 @@ while True:
             # PEDIR TRUCO / AUMENTAR (T)
             if evento.key == pygame.K_t and estado in ["jogador", "cpu_inicia"] and estado != "fim_jogo":
                 if quem_trucou == "jogador":
-                    mensagem = "Você já fez o último pedido de Truco nesta mão!"
+                    mensagem = "Você não pode aumentar a aposta que você mesmo pediu!"
                 elif pontos_j >= 11 or pontos_c >= 11:
                     mensagem = "Não é permitido trucar na mão de 11!"
                 elif valor_mao >= 12:
                     mensagem = "A mão já está no valor máximo (12 pts)!"
                 else:
                     prox = proximo_valor_truco(valor_mao)
+                    nome_p = nome_pedido(prox)
+                    quem_trucou = "jogador"
+                    
+                    anim_truco.disparar(f"{nome_p.upper()}!")
+                    
                     frase_sorteada = random.choice(FRASES_TRUCO.get(prox, ["TRUCO!"]))
                     mensagem = f"Você: '{frase_sorteada}' - CPU pensando..."
                     estado = "cpu_decide_truco"
@@ -154,20 +257,22 @@ while True:
             # RESPOSTA AO TRUCO PELA TECLA
             if estado == "jogador_decide_truco":
                 if evento.key == pygame.K_a:
-                    valor_mao = proximo_valor_truco(valor_mao)
-                    mensagem = f"Você ACEITOU! A mão agora vale {valor_mao} pts."
+                    mensagem = f"Você ACEITOU! A mão vale {valor_mao} pts."
                     estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
                     tempo_estado = agora
 
                 elif evento.key == pygame.K_r and valor_mao < 12:
                     prox = proximo_valor_truco(valor_mao)
                     quem_trucou = "jogador"
+                    
+                    anim_truco.disparar(f"{nome_pedido(prox).upper()}!")
+                    
                     frase_sorteada = random.choice(FRASES_TRUCO.get(prox, ["AUMENTO!"]))
                     mensagem = f"Você: '{frase_sorteada}' - CPU pensando..."
                     estado = "cpu_decide_truco"
                     tempo_estado = agora
 
-            # NAVERGAÇÃO DE CARTAS DO JOGADOR
+            # NAVEGAÇÃO DE CARTAS DO JOGADOR
             if estado == "jogador" and len(jogador) > 0:
                 if evento.key == pygame.K_LEFT:
                     selecionada = max(0, selecionada - 1)
@@ -214,14 +319,33 @@ while True:
     if estado == "cpu_inicia":
         if agora - tempo_estado >= TEMPO_PENSANDO_CPU:
             if len(cpu) > 0:
+                valores_cartas_cpu = [obter_valor_carta({"str": c, "coberta": False}, tombo) for c in cpu]
+                forca_mao = max(valores_cartas_cpu) if valores_cartas_cpu else 0
+
+                # Lógica para a CPU TRUCAR / AUMENTAR espontaneamente
+                if quem_trucou != "cpu" and valor_mao < 12 and pontos_j < 11 and pontos_c < 11:
+                    if (forca_mao >= 9 and random.random() < 0.5) or (forca_mao >= 7 and random.random() < 0.2):
+                        prox = proximo_valor_truco(valor_mao)
+                        quem_trucou = "cpu"
+                        valor_mao = prox
+                        anim_truco.disparar(f"{nome_pedido(prox).upper()}!")
+                        mensagem = f"CPU pediu {nome_pedido(prox).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                        estado = "jogador_decide_truco"
+                        tempo_estado = agora
+                        continue
+
                 estado_ia = criar_estado_ia(cpu, carta_mesa_jogador, tombo, vaza_atual, valor_mao)
                 opcoes_cartas = list(range(len(cpu)))
                 idx_escolhido = ia_agente.escolher_acao(estado_ia, opcoes_cartas)
                 
                 c_str = cpu.pop(idx_escolhido)
                 carta_mesa_cpu = {"str": c_str, "coberta": False}
-                estado = "jogador"
-                mensagem = "CPU jogou! Sua vez."
+                
+                if carta_mesa_jogador is not None:
+                    estado = "avaliar_rodada"
+                else:
+                    estado = "jogador"
+                    mensagem = "CPU jogou! Sua vez."
             else:
                 estado = "prepara_proxima_mao"
                 tempo_estado = agora
@@ -229,6 +353,21 @@ while True:
     elif estado == "cpu_pensando":
         if agora - tempo_estado >= TEMPO_PENSANDO_CPU:
             if len(cpu) > 0:
+                valores_cartas_cpu = [obter_valor_carta({"str": c, "coberta": False}, tombo) for c in cpu]
+                forca_mao = max(valores_cartas_cpu) if valores_cartas_cpu else 0
+
+                # Lógica para a CPU TRUCAR / AUMENTAR de resposta a uma jogada
+                if quem_trucou != "cpu" and valor_mao < 12 and pontos_j < 11 and pontos_c < 11:
+                    if (forca_mao >= 9 and random.random() < 0.4) or (forca_mao >= 8 and random.random() < 0.2):
+                        prox = proximo_valor_truco(valor_mao)
+                        quem_trucou = "cpu"
+                        valor_mao = prox
+                        anim_truco.disparar(f"{nome_pedido(prox).upper()}!")
+                        mensagem = f"CPU pediu {nome_pedido(prox).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                        estado = "jogador_decide_truco"
+                        tempo_estado = agora
+                        continue
+
                 estado_ia = criar_estado_ia(cpu, carta_mesa_jogador, tombo, vaza_atual, valor_mao)
                 opcoes_cartas = list(range(len(cpu)))
                 idx_escolhido = ia_agente.escolher_acao(estado_ia, opcoes_cartas)
@@ -239,23 +378,46 @@ while True:
                     coberta = True
 
                 carta_mesa_cpu = {"str": c_str, "coberta": coberta}
-                estado = "avaliar_rodada"
+                
+                if carta_mesa_jogador is not None:
+                    estado = "avaliar_rodada"
+                else:
+                    estado = "jogador"
+                    mensagem = "CPU jogou! Sua vez."
 
     elif estado == "cpu_decide_truco":
         if agora - tempo_estado >= TEMPO_PENSANDO_CPU:
             valores_cartas_cpu = [obter_valor_carta({"str": c, "coberta": False}, tombo) for c in cpu]
-            força_mao = max(valores_cartas_cpu) if valores_cartas_cpu else 0
-            
-            estado_ia = ("decisao_truco", tuple(sorted(valores_cartas_cpu)), valor_mao)
-            decisao = ia_agente.escolher_acao(estado_ia, ["aceitar", "fugir"])
+            forca_mao = max(valores_cartas_cpu) if valores_cartas_cpu else 0
+            prox_val = proximo_valor_truco(valor_mao)
 
-            if força_mao >= 7 or decisao == "aceitar" or random.random() < 0.3:
-                valor_mao = proximo_valor_truco(valor_mao)
-                quem_trucou = "jogador"
-                mensagem = f"CPU: Aceitou! A mão vale {valor_mao} pts"
-                estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
+            # Tomada de decisão: Aceitar, Fugir ou Retrucar (Aumentar)
+            if forca_mao >= 8 and valor_mao < 12 and random.random() < 0.35: # Chance de REAUMENTAR
+                valor_mao = prox_val
+                prox_aumento = proximo_valor_truco(valor_mao)
+                valor_mao = prox_aumento
+                quem_trucou = "cpu"
+                
+                anim_truco.disparar(f"{nome_pedido(valor_mao).upper()}!")
+                mensagem = f"CPU REAUMENTOU para {nome_pedido(valor_mao).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                estado = "jogador_decide_truco"
                 tempo_estado = agora
-            else:
+
+            elif forca_mao >= 6 or random.random() < 0.4: # ACEITAR
+                valor_mao = prox_val
+                mensagem = f"CPU ACEITOU! A mão agora vale {valor_mao} pts."
+                
+                if carta_mesa_jogador is None and carta_mesa_cpu is None:
+                    estado = "cpu_inicia" if mao_da_vez == "cpu" else "jogador"
+                elif carta_mesa_jogador is not None and carta_mesa_cpu is None:
+                    estado = "cpu_pensando"
+                elif carta_mesa_jogador is None and carta_mesa_cpu is not None:
+                    estado = "jogador"
+                else:
+                    estado = "avaliar_rodada"
+                
+                tempo_estado = agora
+            else: # FUGIR
                 pontos_j += valor_mao
                 ia_agente.aprender("FIM", recompensa=-valor_mao * 2, fim_mao=True)
                 mensagem = f"CPU FUGIU! Você ganhou {valor_mao} pt(s)."
@@ -263,33 +425,39 @@ while True:
                 tempo_estado = agora
 
     elif estado == "avaliar_rodada":
-        v_j = obter_valor_carta(carta_mesa_jogador, tombo)
-        v_c = obter_valor_carta(carta_mesa_cpu, tombo)
+        if carta_mesa_jogador is not None and carta_mesa_cpu is not None:
+            v_j = obter_valor_carta(carta_mesa_jogador, tombo)
+            v_c = obter_valor_carta(carta_mesa_cpu, tombo)
 
-        txt_j = "Carta Coberta" if carta_mesa_jogador["coberta"] else carta_mesa_jogador["str"]
-        txt_c = "Carta Coberta" if carta_mesa_cpu["coberta"] else carta_mesa_cpu["str"]
+            txt_j = "Carta Coberta" if carta_mesa_jogador["coberta"] else carta_mesa_jogador["str"]
+            txt_c = "Carta Coberta" if carta_mesa_cpu["coberta"] else carta_mesa_cpu["str"]
 
-        estado_ia_atual = criar_estado_ia(cpu, carta_mesa_jogador, tombo, vaza_atual, valor_mao)
+            estado_ia_atual = criar_estado_ia(cpu, carta_mesa_jogador, tombo, vaza_atual, valor_mao)
 
-        if v_j > v_c:
-            mensagem = f"Você venceu a vaza: {txt_j} x {txt_c}"
-            rodadas_vencidas_j += 1
-            historico_rodadas.append("J")
-            mao_da_vez = "jogador"
-            ia_agente.aprender(estado_ia_atual, recompensa=-1)
-        elif v_c > v_j:
-            mensagem = f"CPU venceu a vaza: {txt_c} x {txt_j}"
-            rodadas_vencidas_c += 1
-            historico_rodadas.append("C")
-            mao_da_vez = "cpu"
-            ia_agente.aprender(estado_ia_atual, recompensa=+1)
+            if v_j > v_c:
+                mensagem = f"Você venceu a vaza: {txt_j} x {txt_c}"
+                rodadas_vencidas_j += 1
+                historico_rodadas.append("J")
+                mao_da_vez = "jogador"
+                ia_agente.aprender(estado_ia_atual, recompensa=-1)
+            elif v_c > v_j:
+                mensagem = f"CPU venceu a vaza: {txt_c} x {txt_j}"
+                rodadas_vencidas_c += 1
+                historico_rodadas.append("C")
+                mao_da_vez = "cpu"
+                ia_agente.aprender(estado_ia_atual, recompensa=+1)
+            else:
+                mensagem = f"Empate na vaza!"
+                historico_rodadas.append("=")
+
+            vaza_atual += 1
+            estado = "resultado_vaza"
+            tempo_estado = agora
         else:
-            mensagem = f"Empate na vaza!"
-            historico_rodadas.append("=")
-
-        vaza_atual += 1
-        estado = "resultado_vaza"
-        tempo_estado = agora
+            if carta_mesa_jogador is None:
+                estado = "jogador"
+            else:
+                estado = "cpu_pensando"
 
     elif estado == "resultado_vaza":
         if agora - tempo_estado >= TEMPO_RESULTADO:
@@ -360,6 +528,10 @@ while True:
     # ==========================
     tela.fill((34, 112, 62))
 
+    # PAINEL LATERAL DIREITO
+    pygame.draw.rect(tela, (25, 80, 45), (710, 0, 290, 610))
+    pygame.draw.line(tela, (18, 60, 32), (710, 0), (710, 610), 3)
+
     # Barra Superior
     pygame.draw.rect(tela, (18, 60, 32), (0, 0, LARGURA, 65))
     pygame.draw.line(tela, (255, 255, 255), (0, 65), (LARGURA, 65), 2)
@@ -367,7 +539,7 @@ while True:
     titulo = fonte_grande.render("MINI TRUCO", True, (255, 255, 255))
     tela.blit(titulo, (20, 15))
 
-    placar = fonte_media.render(f"Placar: Você {pontos_j} x {pontos_c} CPU (IA: {len(ia_agente.q_table)})", True, (255, 220, 0))
+    placar = fonte_media.render(f"Placar: Você {pontos_j} x {pontos_c} CPU", True, (255, 220, 0))
     tela.blit(placar, (200, 22))
 
     str_rodadas = "Rodadas: "
@@ -378,43 +550,52 @@ while True:
             str_rodadas += "[ ] "
     
     txt_rodadas = fonte_media.render(str_rodadas, True, (200, 230, 255))
-    tela.blit(txt_rodadas, (560, 22))
+    tela.blit(txt_rodadas, (480, 22))
 
-    val_txt = fonte_media.render(f"Mão: {valor_mao} pt(s)", True, (100, 255, 100))
-    tela.blit(val_txt, (830, 22))
+    # Avatares dos Jogadores
+    desenhar_avatar(tela, 30, 450, "Você", img_avatar_j, (100, 255, 100))
+    desenhar_avatar(tela, 30, 120, "CPU", img_avatar_c, (255, 100, 100))
 
     # Mensagem do Jogo
-    pygame.draw.rect(tela, (20, 45, 25), (LARGURA // 2 - 320, 75, 640, 32), border_radius=5)
+    pygame.draw.rect(tela, (20, 45, 25), (120, 75, 570, 32), border_radius=5)
     msg = fonte_media.render(mensagem, True, (255, 255, 255))
-    tela.blit(msg, (LARGURA // 2 - msg.get_width() // 2, 80))
+    tela.blit(msg, (120 + (570 - msg.get_width()) // 2, 80))
 
     largura_c, altura_c, espaco_c = 75, 110, 15
 
     # Cartas da CPU
     total_cpu = len(cpu)
     if total_cpu > 0:
-        x_ini_cpu = (LARGURA - (total_cpu * largura_c + (total_cpu - 1) * espaco_c)) // 2
+        x_ini_cpu = 120 + (570 - (total_cpu * largura_c + (total_cpu - 1) * espaco_c)) // 2
         for i in range(total_cpu):
             x = x_ini_cpu + i * (largura_c + espaco_c)
             y = 120
-            pygame.draw.rect(tela, (40, 60, 150), (x, y, largura_c, altura_c), border_radius=6)
-            pygame.draw.rect(tela, (255, 255, 255), (x, y, largura_c, altura_c), 2, border_radius=6)
+            if img_verso_carta:
+                tela.blit(img_verso_carta, (x, y))
+            else:
+                pygame.draw.rect(tela, (40, 60, 150), (x, y, largura_c, altura_c), border_radius=6)
+                pygame.draw.rect(tela, (255, 255, 255), (x, y, largura_c, altura_c), 2, border_radius=6)
 
-    # Mesa / Tombo
+    # Baralho Decorativo + Tombo na Mesa
     y_mesa = 260
-    x_tombo = 120
+    x_deck = 140
+    x_tombo = 240
+    
+    desenhar_monte_baralho(tela, x_deck, y_mesa)
+
     lbl_tombo = fonte_pequena.render("TOMBO", True, (255, 220, 0))
     tela.blit(lbl_tombo, (x_tombo + (largura_c - lbl_tombo.get_width()) // 2, y_mesa - 18))
     desenhar_carta(tela, x_tombo, y_mesa, largura_c, altura_c, tombo, tombo, eh_tombo=True)
 
+    # Cartas Jogadas na Mesa
     if carta_mesa_jogador:
-        x = LARGURA // 2 - largura_c - 15
+        x = 380
         lbl = fonte_pequena.render("Você", True, (200, 255, 200))
         tela.blit(lbl, (x + (largura_c - lbl.get_width()) // 2, y_mesa - 18))
         desenhar_carta(tela, x, y_mesa, largura_c, altura_c, carta_mesa_jogador, tombo)
 
     if carta_mesa_cpu:
-        x = LARGURA // 2 + 15
+        x = 480
         lbl = fonte_pequena.render("CPU", True, (200, 255, 200))
         tela.blit(lbl, (x + (largura_c - lbl.get_width()) // 2, y_mesa - 18))
         desenhar_carta(tela, x, y_mesa, largura_c, altura_c, carta_mesa_cpu, tombo)
@@ -422,7 +603,7 @@ while True:
     # Cartas do Jogador
     total_jog = len(jogador)
     if total_jog > 0:
-        x_ini_jog = (LARGURA - (total_jog * largura_c + (total_jog - 1) * espaco_c)) // 2
+        x_ini_jog = 120 + (570 - (total_jog * largura_c + (total_jog - 1) * espaco_c)) // 2
         for i, carta in enumerate(jogador):
             x = x_ini_jog + i * (largura_c + espaco_c)
             y = 450 if (i == selecionada and estado == "jogador") else 470
@@ -432,6 +613,21 @@ while True:
                 tela.blit(seta, (x + (largura_c - seta.get_width()) // 2, y - 18))
 
             desenhar_carta(tela, x, y, largura_c, altura_c, carta, tombo, selecionada=(i == selecionada and estado == "jogador"))
+
+    # INFORMAÇÕES NO PAINEL DIREITO
+    pygame.draw.rect(tela, (18, 60, 32), (730, 80, 200, 90), border_radius=8)
+    pygame.draw.rect(tela, (255, 215, 0), (730, 80, 200, 90), 2, border_radius=8)
+    
+    txt_val_m = fonte_grande.render(f"VALOR DA MÃO", True, (255, 255, 255))
+    val_m_num = fonte_destaque.render(f"{valor_mao} PTS", True, (255, 220, 0))
+    tela.blit(txt_val_m, (730 + (200 - txt_val_m.get_width()) // 2, 90))
+    tela.blit(val_m_num, (730 + (200 - val_m_num.get_width()) // 2, 120))
+
+    txt_q_table = fonte_pequena.render(f"Estados IA: {len(ia_agente.q_table)}", True, (180, 220, 200))
+    tela.blit(txt_q_table, (730 + (200 - txt_q_table.get_width()) // 2, 190))
+
+    # ANIMAÇÃO DO TRUCO
+    anim_truco.atualizar_e_desenhar(tela, agora)
 
     # Fim de Jogo
     if estado == "fim_jogo":
@@ -458,7 +654,6 @@ while True:
             if vaza_atual > 1:
                 opcoes.append(("[C]", "Tombar/Cobrir"))
 
-        # BOTÃO DO TRUCO: Permanece visível sempre que for seu turno ou vez de jogar
         if estado in ["jogador", "cpu_inicia"] and quem_trucou != "jogador" and valor_mao < 12:
             opcoes.append(("[T]", f"Pedir {nome_pedido(proximo_valor_truco(valor_mao))}"))
 
@@ -468,7 +663,7 @@ while True:
         if estado == "jogador_decide_truco":
             opcoes.append(("[A]", "ACEITAR"))
             if valor_mao < 12:
-                prox_aumento = proximo_valor_truco(proximo_valor_truco(valor_mao))
+                prox_aumento = proximo_valor_truco(valor_mao)
                 opcoes.append(("[R]", f"Pedir {nome_pedido(prox_aumento)}"))
 
         opcoes.append(("[N]", "Novo Jogo"))
