@@ -191,6 +191,7 @@ vaza_atual = 1
 selecionada = 0
 tempo_estado = pygame.time.get_ticks()
 carta_mesa_jogador, carta_mesa_cpu = None, None
+estado_pre_truco = None
 
 estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
 mensagem = "Sua vez de jogar!" if estado == "jogador" else "CPU vai começar a rodada..."
@@ -221,6 +222,7 @@ while True:
                 vaza_atual = 1
                 selecionada = 0
                 carta_mesa_jogador, carta_mesa_cpu = None, None
+                estado_pre_truco = None
                 tempo_estado = agora
                 
                 estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
@@ -231,6 +233,7 @@ while True:
                 pontos_c += valor_mao
                 ia_agente.aprender("FIM", recompensa=+valor_mao * 2, fim_mao=True)
                 mensagem = f"Você fugiu! CPU ganha {valor_mao} pt(s)."
+                carta_mesa_jogador, carta_mesa_cpu = None, None
                 estado = "prepara_proxima_mao"
                 tempo_estado = agora
 
@@ -251,15 +254,36 @@ while True:
                     
                     frase_sorteada = random.choice(FRASES_TRUCO.get(prox, ["TRUCO!"]))
                     mensagem = f"Você: '{frase_sorteada}' - CPU pensando..."
+                    estado_pre_truco = estado
                     estado = "cpu_decide_truco"
                     tempo_estado = agora
 
             # RESPOSTA AO TRUCO PELA TECLA
             if estado == "jogador_decide_truco":
                 if evento.key == pygame.K_a:
-                    mensagem = f"Você ACEITOU! A mão vale {valor_mao} pts."
-                    estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
+                    mensagem = f"Você ACEITOU! A mão agora vale {valor_mao} pts."
+
+                    if carta_mesa_jogador is not None and carta_mesa_cpu is not None:
+                        estado = "avaliar_rodada"
+                    elif carta_mesa_jogador is not None and carta_mesa_cpu is None:
+                        estado = "cpu_pensando"
+                        mensagem = "CPU pensando..."
+                    elif carta_mesa_jogador is None and carta_mesa_cpu is not None:
+                        estado = "jogador"
+                        mensagem = "Sua vez de jogar!"
+                    elif estado_pre_truco in ["cpu_inicia", "cpu_pensando", "jogador"]:
+                        estado = estado_pre_truco
+                        if estado == "cpu_inicia":
+                            mensagem = "CPU vai começar a rodada..."
+                        elif estado == "cpu_pensando":
+                            mensagem = "CPU pensando..."
+                        else:
+                            mensagem = "Sua vez de jogar!"
+                    else:
+                        estado = "jogador" if mao_da_vez == "jogador" else "cpu_inicia"
+
                     tempo_estado = agora
+                    estado_pre_truco = None
 
                 elif evento.key == pygame.K_r and valor_mao < 12:
                     prox = proximo_valor_truco(valor_mao)
@@ -269,6 +293,7 @@ while True:
                     
                     frase_sorteada = random.choice(FRASES_TRUCO.get(prox, ["AUMENTO!"]))
                     mensagem = f"Você: '{frase_sorteada}' - CPU pensando..."
+                    estado_pre_truco = estado
                     estado = "cpu_decide_truco"
                     tempo_estado = agora
 
@@ -317,6 +342,12 @@ while True:
     # LÓGICA E ESTADOS DA IA
     # ==========================
     if estado == "cpu_inicia":
+        if carta_mesa_cpu is not None and carta_mesa_jogador is None:
+            estado = "jogador"
+            mensagem = "CPU já jogou. Sua vez."
+            tempo_estado = agora
+            continue
+
         if agora - tempo_estado >= TEMPO_PENSANDO_CPU:
             if len(cpu) > 0:
                 valores_cartas_cpu = [obter_valor_carta({"str": c, "coberta": False}, tombo) for c in cpu]
@@ -330,6 +361,7 @@ while True:
                         valor_mao = prox
                         anim_truco.disparar(f"{nome_pedido(prox).upper()}!")
                         mensagem = f"CPU pediu {nome_pedido(prox).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                        estado_pre_truco = estado
                         estado = "jogador_decide_truco"
                         tempo_estado = agora
                         continue
@@ -351,6 +383,13 @@ while True:
                 tempo_estado = agora
 
     elif estado == "cpu_pensando":
+        if carta_mesa_cpu is not None:
+            if carta_mesa_jogador is not None:
+                estado = "avaliar_rodada"
+            else:
+                estado = "jogador"
+            continue
+
         if agora - tempo_estado >= TEMPO_PENSANDO_CPU:
             if len(cpu) > 0:
                 valores_cartas_cpu = [obter_valor_carta({"str": c, "coberta": False}, tombo) for c in cpu]
@@ -364,6 +403,7 @@ while True:
                         valor_mao = prox
                         anim_truco.disparar(f"{nome_pedido(prox).upper()}!")
                         mensagem = f"CPU pediu {nome_pedido(prox).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                        estado_pre_truco = estado
                         estado = "jogador_decide_truco"
                         tempo_estado = agora
                         continue
@@ -393,18 +433,16 @@ while True:
 
             # Tomada de decisão: Aceitar, Fugir ou Retrucar (Aumentar)
             if forca_mao >= 8 and valor_mao < 12 and random.random() < 0.35: # Chance de REAUMENTAR
-                valor_mao = prox_val
-                prox_aumento = proximo_valor_truco(valor_mao)
-                valor_mao = prox_aumento
+                valor_mao = proximo_valor_truco(valor_mao)
                 quem_trucou = "cpu"
                 
                 anim_truco.disparar(f"{nome_pedido(valor_mao).upper()}!")
                 mensagem = f"CPU REAUMENTOU para {nome_pedido(valor_mao).upper()}! [A] Aceitar | [F] Fugir | [R] Aumentar"
+                estado_pre_truco = estado
                 estado = "jogador_decide_truco"
                 tempo_estado = agora
 
             elif forca_mao >= 6 or random.random() < 0.4: # ACEITAR
-                valor_mao = prox_val
                 mensagem = f"CPU ACEITOU! A mão agora vale {valor_mao} pts."
                 
                 if carta_mesa_jogador is None and carta_mesa_cpu is None:
@@ -421,6 +459,7 @@ while True:
                 pontos_j += valor_mao
                 ia_agente.aprender("FIM", recompensa=-valor_mao * 2, fim_mao=True)
                 mensagem = f"CPU FUGIU! Você ganhou {valor_mao} pt(s)."
+                carta_mesa_jogador, carta_mesa_cpu = None, None
                 estado = "prepara_proxima_mao"
                 tempo_estado = agora
 
@@ -505,6 +544,7 @@ while True:
 
     elif estado == "prepara_proxima_mao":
         if agora - tempo_estado >= TEMPO_RESULTADO:
+            carta_mesa_jogador, carta_mesa_cpu = None, None
             if pontos_j >= 12 or pontos_c >= 12:
                 estado = "fim_jogo"
             else:
